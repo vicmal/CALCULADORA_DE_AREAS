@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1c2128">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="color-scheme" content="dark">
+<title>Cálculo de Áreas · GPS</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<style>
+  :root{
+    --bg:#14181d;
+    --panel:#1c2128;
+    --panel2:#232a33;
+    --panel3:#2a3240;
+    --line:#333c47;
+    --amber:#e0a13c;
+    --amber-dim:#8a6626;
+    --text:#e7e9ec;
+    --muted:#9aa3b0;
+    --green:#4caf7d;
+    --red:#e07a70;
+    --redStrong:#ff2020;
+    --mono:'Courier New',ui-monospace,monospace;
+    --radius-lg:18px;
+    --radius-md:12px;
+    --radius-sm:9px;
+    --tap:52px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);
+    font-family:-apple-system,Segoe UI,Roboto,"Noto Sans",sans-serif;
+    color:var(--text);font-size:15px;-webkit-text-size-adjust:100%;}
+  #app{height:100vh;height:100dvh;overflow:hidden;position:relative;}
+  .screen{display:none;flex-direction:column;height:100%;}
+  .screen.active{display:flex;}
+
+  /* ---------- Pantalla 1: inicio ---------- */
+  #screenHome{justify-content:center;align-items:stretch;padding:24px 20px calc(20px + env(safe-area-inset-bottom));}
+  .homeWrap{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:34px;}
+  #screenHome h1{
+    font-size:26px;font-weight:800;letter-spacing:.5px;text-align:center;margin:0;
+    color:var(--text);text-transform:uppercase;line-height:1.3;
+  }
+  .homeButtons{display:flex;gap:14px;width:100%;max-width:520px;}
+  .bigBtn{
+    flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-lg);
+    color:var(--text);padding:26px 12px;display:flex;flex-direction:column;align-items:center;
+    justify-content:center;gap:10px;font-size:15px;font-weight:700;line-height:1.35;cursor:pointer;
+    min-height:170px;touch-action:manipulation;transition:transform .08s ease, filter .15s ease, border-color .15s ease;
+  }
+  .bigBtn .ic{font-size:34px;}
+  .bigBtn:active{transform:scale(0.96);filter:brightness(1.1);}
+  .bigBtn.left{border-color:var(--amber-dim);}
+  .bigBtn.left:active{background:rgba(224,161,60,.12);}
+  .bigBtn.right{border-color:#3f6a8a;}
+  .bigBtn.right:active{background:rgba(80,150,200,.12);}
+  .credit{
+    text-align:center;font-size:12px;color:var(--muted);padding-top:10px;
+  }
+  .credit strong{color:var(--amber);font-weight:700;}
+
+  /* ---------- Pantalla 2: captura de datos ---------- */
+  #screenInput{padding:calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));overflow-y:auto;}
+  .inputHeader{display:flex;align-items:center;gap:10px;margin-bottom:12px;}
+  .backBtn{
+    flex:0 0 auto;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:var(--radius-md);padding:10px 14px;font-size:14px;font-weight:700;cursor:pointer;
+    min-height:44px;touch-action:manipulation;
+  }
+  .inputHeader h2{flex:1;margin:0;font-size:15.5px;font-weight:700;color:var(--text);text-align:center;padding-right:54px;}
+  #status{
+    display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600;color:var(--muted);
+    background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-md);
+    padding:11px 13px;margin-bottom:12px;min-height:20px;line-height:1.35;
+  }
+  #status.locked{color:var(--green);background:rgba(76,175,125,.12);border-color:rgba(76,175,125,.5);}
+  #status.err{color:var(--red);background:rgba(224,122,112,.12);border-color:rgba(224,122,112,.55);}
+  #status::before{content:'ℹ';font-size:15px;flex:0 0 auto;}
+  #status.locked::before{content:'✓';}
+  #status.err::before{content:'⚠';}
+  button{
+    background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:var(--radius-md);
+    padding:13px 10px;font-size:14.5px;font-weight:700;cursor:pointer;min-height:var(--tap);
+    touch-action:manipulation;transition:transform .08s ease, filter .15s ease;
+  }
+  button:active{transform:scale(0.96);filter:brightness(1.08);}
+  button.primary{background:linear-gradient(180deg,#e6ac4a,#d1922f);border-color:var(--amber);color:#241a08;}
+  button.danger{background:var(--panel2);border-color:var(--red);color:var(--red);}
+  button:disabled{opacity:.4;cursor:not-allowed;}
+  .row{display:flex;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
+  .row button{flex:1 1 auto;min-width:120px;}
+  #pointsList{
+    font-family:var(--mono);font-size:12.5px;line-height:1.55;max-height:260px;overflow-y:auto;
+    background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-md);
+    padding:10px 12px;margin-bottom:12px;
+  }
+  #pointsList div{padding:4px 0;border-bottom:1px dashed var(--line);color:var(--muted);}
+  #pointsList div:last-child{border-bottom:none;}
+  #pointsList .pt-idx{color:var(--amber);font-weight:700;}
+  .qtag{font-weight:700;}
+  .qtag.q-excellent, .qtag.q-good{color:var(--green);}
+  .qtag.q-fair{color:var(--amber);}
+  .qtag.q-poor{color:var(--red);}
+  .field{flex:1 1 auto;min-width:120px;}
+  .field .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  .field input, .field select{
+    width:100%;background:var(--panel2);color:var(--text);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:12px;font-family:var(--mono);font-size:16px;min-height:var(--tap);
+  }
+  .field input:focus, .field select:focus, #utmTable input:focus{
+    outline:2px solid var(--amber);outline-offset:-1px;border-color:var(--amber);
+  }
+  #utmTableScroll{overflow-x:auto;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-md);margin-bottom:10px;}
+  #utmTable{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:13px;}
+  #utmTable th{
+    text-align:left;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;
+    padding:10px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel2);
+  }
+  #utmTable td{padding:6px 8px;border-bottom:1px dashed var(--line);}
+  #utmTable td.ptCell{color:var(--amber);white-space:nowrap;font-weight:700;}
+  #utmTable input{
+    width:100%;min-width:96px;background:var(--panel);color:var(--text);border:1px solid var(--line);
+    border-radius:8px;padding:10px 8px;font-family:var(--mono);font-size:15px;min-height:42px;
+  }
+  #utmTable input:invalid{border-color:var(--red);}
+  .formMsg{font-size:13px;min-height:16px;margin:4px 0 10px;color:var(--muted);font-weight:600;line-height:1.4;}
+  .formMsg.err{color:var(--red);}
+  .formMsg.err::before{content:'⚠ ';}
+  .hint{font-size:12px;color:var(--muted);text-align:center;margin-top:4px;line-height:1.4;}
+
+  /* ---------- Pantalla 3: resultados (dividida horizontalmente) ---------- */
+  #screenResults{}
+  .resultsTop{
+    flex:0 0 auto;background:var(--panel);border-bottom:1px solid var(--line);
+    padding:calc(14px + env(safe-area-inset-top)) 14px 14px;
+  }
+  .resultsTop h2{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);text-align:center;font-weight:700;}
+  .areaUnits{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;}
+  .areaUnits .card{background:var(--panel2);border:1px solid var(--amber-dim);border-radius:var(--radius-md);padding:12px 6px;text-align:center;}
+  .areaUnits .card .label{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:5px;font-weight:600;}
+  .areaUnits .card .value{font-family:var(--mono);font-size:17px;color:var(--amber);font-weight:700;}
+  .resultsBottom{flex:1 1 auto;min-height:0;position:relative;}
+  #resultMap{position:absolute;inset:0;}
+  .resultsFooter{
+    flex:0 0 auto;background:var(--panel);border-top:1px solid var(--line);
+    padding:12px 14px calc(12px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+  .resultsFooter button{flex:1 1 auto;min-width:130px;}
+  .creditSmall{font-size:11px;color:var(--muted);width:100%;text-align:center;order:99;}
+  .creditSmall strong{color:var(--amber);}
+  .leaflet-control-attribution{font-size:9px !important;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ---------- Pantalla 1: inicio ---------- -->
+  <div id="screenHome" class="screen active">
+    <div class="homeWrap">
+      <h1>Cálculo de Áreas</h1>
+      <div class="homeButtons">
+        <button class="bigBtn left" id="btnGoRecord"><span class="ic">📍</span>Grabar puntos<br>en campo</button>
+        <button class="bigBtn right" id="btnGoManual"><span class="ic">🔢</span>Introducir<br>Coordenadas</button>
+      </div>
+    </div>
+    <div class="credit">Creado por <strong>Ing° VHMG</strong></div>
+  </div>
+
+  <!-- ---------- Pantalla 2: captura de datos ---------- -->
+  <div id="screenInput" class="screen">
+    <div class="inputHeader">
+      <button class="backBtn" id="btnBackHome">← Volver</button>
+      <h2 id="inputTitle">Grabar puntos</h2>
+    </div>
+
+    <div id="status">Toca "Grabar punto aquí" en cada vértice del terreno.</div>
+
+    <div id="recordBlock" style="display:none;">
+      <div class="row">
+        <button class="primary" id="btnRecordPoint">📍 Grabar punto aquí</button>
+      </div>
+      <div id="pointsList"><div style="color:var(--muted)">Sin puntos grabados aún.</div></div>
+      <div class="row">
+        <button id="btnRecordUndo">Deshacer último</button>
+        <button class="danger" id="btnRecordCancel">Cancelar</button>
+      </div>
+      <div class="row">
+        <button class="primary" id="btnRecordFinish">✔ Finalizar</button>
+      </div>
+      <div class="hint">Camina hasta cada vértice del terreno y toca "Grabar punto aquí" (mínimo 3 puntos).</div>
+    </div>
+
+    <div id="manualBlock" style="display:none;">
+      <div class="row">
+        <div class="field">
+          <div class="label">Huso UTM</div>
+          <input type="number" id="utmZoneInput" min="1" max="60" step="1" placeholder="Ej: 19">
+        </div>
+        <div class="field">
+          <div class="label">Hemisferio</div>
+          <select id="utmHemiInput">
+            <option value="N">Norte</option>
+            <option value="S">Sur</option>
+          </select>
+        </div>
+      </div>
+      <div class="row">
+        <div class="field" style="flex:2;">
+          <div class="label">Número de vértices</div>
+          <input type="number" id="vertexCountInput" min="3" max="200" step="1" placeholder="Mínimo 3">
+        </div>
+        <button class="primary" id="btnGenTable" style="align-self:flex-end;">Generar planilla</button>
+      </div>
+      <div id="manualMsg" class="formMsg"></div>
+      <div id="utmTableWrap" style="display:none;">
+        <div id="utmTableScroll">
+          <table id="utmTable">
+            <thead><tr><th>Punto</th><th>Este (X)</th><th>Norte (Y)</th></tr></thead>
+            <tbody id="utmTableBody"></tbody>
+          </table>
+        </div>
+        <div class="row">
+          <button class="primary" id="btnCalcManual">✔ Finalizar (calcular área)</button>
+          <button class="danger" id="btnCancelManual">Cancelar planilla</button>
+        </div>
+      </div>
+      <div class="hint">Ingresa el huso, el hemisferio y las coordenadas Este/Norte de cada vértice.</div>
+    </div>
+  </div>
+
+  <!-- ---------- Pantalla 3: resultados ---------- -->
+  <div id="screenResults" class="screen">
+    <div class="resultsTop">
+      <h2>Área calculada</h2>
+      <div class="areaUnits">
+        <div class="card"><div class="label">m²</div><div class="value" id="areaM2">0</div></div>
+        <div class="card"><div class="label">ha</div><div class="value" id="areaHa">0</div></div>
+        <div class="card"><div class="label">km²</div><div class="value" id="areaKm2">0</div></div>
+      </div>
+    </div>
+    <div class="resultsBottom">
+      <div id="resultMap"></div>
+    </div>
+    <div class="resultsFooter">
+      <button class="primary" id="btnNewCalc">🔄 Nuevo cálculo</button>
+      <button id="btnDownloadCsv">📄 Descargar CSV</button>
+      <span class="creditSmall">Creado por <strong>Ing° VHMG</strong></span>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+<script>
+// ============================================================
+// Cálculo de Áreas — app independiente de un solo archivo HTML.
+// Reutiliza la arquitectura ya probada de la app "Lector GPS · UTM"
+// (conversión a UTM, shoelace, fusión de huso por primer vértice,
+// indicador de calidad por precisión) adaptada a un flujo de 3
+// pantallas: inicio -> captura de datos -> resultados.
+// ============================================================
+
+// ---------- Conversión a UTM ----------
+function utmProjString(zone, isNorth){
+  return `+proj=utm +zone=${zone} ${isNorth ? '' : '+south '}+ellps=WGS84 +datum=WGS84 +units=m +no_defs`;
+}
+function toUTM(lat, lon){
+  const zone = Math.floor((lon + 180) / 6) + 1;
+  const isNorth = lat >= 0;
+  const [x, y] = proj4('WGS84', utmProjString(zone, isNorth), [lon, lat]);
+  return { zone, hemi: isNorth ? 'N' : 'S', easting: x, northing: y };
+}
+function fmtUTM(u){
+  return `${u.zone}${u.hemi}  E:${u.easting.toFixed(1)}  N:${u.northing.toFixed(1)}`;
+}
+
+// ---------- Calidad de señal (mismo criterio que la app principal) ----------
+// La Geolocation API del navegador no expone satélites ni constelación
+// (GPS/GLONASS/Galileo...), así que la calidad se deriva de la precisión.
+function qualityTier(acc){
+  if (acc == null || !isFinite(acc)) return { level: 0, label: 'Sin señal', cls: '' };
+  if (acc <= 5)  return { level: 4, label: 'Excelente', cls: 'q-excellent' };
+  if (acc <= 15) return { level: 3, label: 'Buena',      cls: 'q-good' };
+  if (acc <= 30) return { level: 2, label: 'Regular',    cls: 'q-fair' };
+  return           { level: 1, label: 'Débil',      cls: 'q-poor' };
+}
+
+// ---------- Estado ----------
+let areaPoints = [];      // { lat, lon, e?, n?, acc? }
+let areaRefZone = null;   // huso/hemisferio de referencia (primer vértice) para el cálculo planar
+let areaManualInfo = null;// { zone, isNorth } cuando el polígono viene de coordenadas UTM ingresadas a mano
+let inputMode = null;     // 'record' | 'manual'
+let lastAreaM2 = 0;
+
+const statusEl = document.getElementById('status');
+
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ---------- Pantalla 1 -> Pantalla 2 ----------
+const recordBlock = document.getElementById('recordBlock');
+const manualBlock = document.getElementById('manualBlock');
+const inputTitle = document.getElementById('inputTitle');
+
+function resetAreaState(){
+  areaPoints = [];
+  areaRefZone = null;
+  areaManualInfo = null;
+  renderPointsList();
+}
+
+function startFlow(mode){
+  inputMode = mode;
+  resetAreaState();
+  if (mode === 'record'){
+    inputTitle.textContent = 'Grabar puntos en campo';
+    recordBlock.style.display = 'block';
+    manualBlock.style.display = 'none';
+    statusEl.textContent = 'Toca "Grabar punto aquí" en cada vértice del terreno.';
+    statusEl.className = '';
+  } else {
+    inputTitle.textContent = 'Introducir coordenadas';
+    recordBlock.style.display = 'none';
+    manualBlock.style.display = 'block';
+    resetManualForm();
+    statusEl.textContent = 'Indica huso, hemisferio y número de vértices para generar la planilla.';
+    statusEl.className = '';
+  }
+  showScreen('screenInput');
+}
+
+document.getElementById('btnGoRecord').onclick = () => startFlow('record');
+document.getElementById('btnGoManual').onclick = () => startFlow('manual');
+
+document.getElementById('btnBackHome').onclick = () => {
+  resetAreaState();
+  resetManualForm();
+  inputMode = null;
+  showScreen('screenHome');
+};
+
+// ---------- Flujo "Grabar puntos en campo" ----------
+const btnRecordPoint = document.getElementById('btnRecordPoint');
+const pointsListEl = document.getElementById('pointsList');
+let recording = false; // evita doble toque mientras se espera la respuesta del GPS
+
+function renderPointsList(){
+  if (areaPoints.length === 0){
+    pointsListEl.innerHTML = '<div style="color:var(--muted)">Sin puntos grabados aún.</div>';
+    return;
+  }
+  pointsListEl.innerHTML = areaPoints.map((p, i) => {
+    const u = toUTM(p.lat, p.lon);
+    const tier = p.acc !== undefined ? qualityTier(p.acc) : null;
+    const accTxt = p.acc !== undefined
+      ? ` · ±${p.acc.toFixed(1)} m <span class="qtag ${tier.cls}">(${tier.label.toLowerCase()})</span>`
+      : '';
+    return `<div><span class="pt-idx">V${i+1}</span> ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} — ${fmtUTM(u)}${accTxt}</div>`;
+  }).join('');
+}
+
+btnRecordPoint.onclick = () => {
+  if (recording) return;
+  if (!navigator.geolocation){
+    statusEl.textContent = 'Este navegador no soporta geolocalización.';
+    statusEl.className = 'err';
+    return;
+  }
+  recording = true;
+  btnRecordPoint.disabled = true;
+  const nextIdx = areaPoints.length + 1;
+  statusEl.textContent = `Buscando señal GPS para el vértice ${nextIdx}...`;
+  statusEl.className = '';
+
+  // Lectura cruda e independiente por vértice (sin promediar con lecturas
+  // anteriores): cada vértice debe representar una medición GPS real en
+  // ese punto exacto del terreno.
+  navigator.geolocation.getCurrentPosition((pos) => {
+    const { latitude, longitude, accuracy } = pos.coords;
+    areaPoints.push({ lat: latitude, lon: longitude, acc: accuracy });
+    renderPointsList();
+    const tier = qualityTier(accuracy);
+    statusEl.textContent = `Vértice ${areaPoints.length} grabado (± ${accuracy.toFixed(1)} m, ${tier.label.toLowerCase()}).`;
+    statusEl.className = 'locked';
+    recording = false;
+    btnRecordPoint.disabled = false;
+  }, (err) => {
+    statusEl.textContent = 'No se pudo obtener la ubicación: ' + err.message;
+    statusEl.className = 'err';
+    recording = false;
+    btnRecordPoint.disabled = false;
+  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+};
+
+document.getElementById('btnRecordUndo').onclick = () => {
+  areaPoints.pop();
+  renderPointsList();
+};
+
+document.getElementById('btnRecordCancel').onclick = () => {
+  resetAreaState();
+  inputMode = null;
+  showScreen('screenHome');
+};
+
+document.getElementById('btnRecordFinish').onclick = () => {
+  if (areaPoints.length < 3){
+    statusEl.textContent = `Graba al menos ${3 - areaPoints.length} punto(s) más antes de finalizar (mínimo 3 vértices).`;
+    statusEl.className = 'err';
+    return;
+  }
+  finishAndShowResults();
+};
+
+// ---------- Flujo "Introducir Coordenadas" ----------
+const utmZoneInput = document.getElementById('utmZoneInput');
+const utmHemiInput = document.getElementById('utmHemiInput');
+const vertexCountInput = document.getElementById('vertexCountInput');
+const btnGenTable = document.getElementById('btnGenTable');
+const utmTableWrap = document.getElementById('utmTableWrap');
+const utmTableBody = document.getElementById('utmTableBody');
+const btnCalcManual = document.getElementById('btnCalcManual');
+const btnCancelManual = document.getElementById('btnCancelManual');
+const manualMsg = document.getElementById('manualMsg');
+
+function setManualMsg(text, kind){
+  manualMsg.textContent = text || '';
+  manualMsg.className = 'formMsg' + (kind ? ' ' + kind : '');
+  if (text){
+    statusEl.textContent = text;
+    statusEl.className = kind === 'err' ? 'err' : '';
+  }
+}
+
+function resetManualForm(){
+  utmTableWrap.style.display = 'none';
+  utmTableBody.innerHTML = '';
+  utmZoneInput.value = '';
+  utmHemiInput.value = 'N';
+  vertexCountInput.value = '';
+  utmZoneInput.disabled = false;
+  utmHemiInput.disabled = false;
+  vertexCountInput.disabled = false;
+  btnGenTable.disabled = false;
+  setManualMsg('', '');
+}
+
+btnGenTable.onclick = () => {
+  const zone = parseInt(utmZoneInput.value, 10);
+  const count = parseInt(vertexCountInput.value, 10);
+
+  if (!zone || zone < 1 || zone > 60){
+    setManualMsg('Ingresa un huso UTM válido (1 a 60) antes de generar la planilla.', 'err');
+    utmZoneInput.focus();
+    return;
+  }
+  if (!count || count < 3){
+    setManualMsg('Indica el número de vértices del polígono (mínimo 3).', 'err');
+    vertexCountInput.focus();
+    return;
+  }
+  if (count > 200){
+    setManualMsg('Máximo 200 vértices por planilla.', 'err');
+    vertexCountInput.focus();
+    return;
+  }
+
+  utmTableBody.innerHTML = '';
+  for (let i = 1; i <= count; i++){
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      `<td class="ptCell">P${i}</td>` +
+      `<td><input type="number" step="any" class="utmE" inputmode="decimal" placeholder="Este"></td>` +
+      `<td><input type="number" step="any" class="utmN" inputmode="decimal" placeholder="Norte"></td>`;
+    utmTableBody.appendChild(tr);
+  }
+  utmTableWrap.style.display = 'block';
+  utmZoneInput.disabled = true;
+  utmHemiInput.disabled = true;
+  vertexCountInput.disabled = true;
+  btnGenTable.disabled = true;
+  setManualMsg(`Planilla generada: completa Este y Norte para los ${count} vértices.`, '');
+};
+
+btnCancelManual.onclick = resetManualForm;
+
+btnCalcManual.onclick = () => {
+  const zone = parseInt(utmZoneInput.value, 10);
+  const isNorth = utmHemiInput.value === 'N';
+  const rows = Array.from(utmTableBody.querySelectorAll('tr'));
+
+  const pts = [];
+  for (const tr of rows){
+    const eInput = tr.querySelector('.utmE');
+    const nInput = tr.querySelector('.utmN');
+    const e = parseFloat(eInput.value);
+    const n = parseFloat(nInput.value);
+    if (!isFinite(e) || !isFinite(n)){
+      eInput.style.borderColor = 'var(--red)';
+      nInput.style.borderColor = 'var(--red)';
+      setManualMsg('Completa Este y Norte en todos los vértices (valores numéricos).', 'err');
+      return;
+    }
+    eInput.style.borderColor = '';
+    nInput.style.borderColor = '';
+    const [lon, lat] = proj4(utmProjString(zone, isNorth), 'WGS84', [e, n]);
+    pts.push({ lat, lon, e, n });
+  }
+
+  areaPoints = pts;
+  areaManualInfo = { zone, isNorth };
+  areaRefZone = null;
+  finishAndShowResults();
+};
+
+// ---------- Cálculo de área (shoelace sobre UTM) ----------
+// Con vértices manuales se usa directamente Este/Norte (más exacto, sin
+// redondeo de ida y vuelta); con vértices grabados por GPS se proyectan
+// todos al huso/hemisferio del PRIMER vértice, para que el cálculo sea
+// geométricamente válido aunque el polígono roce un límite de huso.
+function toUTMFixedZone(lat, lon){
+  if (!areaRefZone){
+    areaRefZone = { zone: Math.floor((lon + 180) / 6) + 1, isNorth: lat >= 0 };
+  }
+  const [x, y] = proj4('WGS84', utmProjString(areaRefZone.zone, areaRefZone.isNorth), [lon, lat]);
+  return { x, y };
+}
+
+function shoelaceArea(pts){
+  let sum = 0;
+  const n = pts.length;
+  for (let i = 0; i < n; i++){
+    const j = (i + 1) % n;
+    sum += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(sum) / 2; // m²
+}
+
+function computeAreaM2(){
+  if (areaPoints.length < 3) return 0;
+  const allManual = areaPoints.every(p => p.e !== undefined);
+  const planar = allManual
+    ? areaPoints.map(p => ({ x: p.e, y: p.n }))
+    : areaPoints.map(p => toUTMFixedZone(p.lat, p.lon));
+  return shoelaceArea(planar);
+}
+
+// ---------- Pantalla 3: resultados ----------
+let resultMap = null;
+let resultPolygon = null;
+let resultMarkers = [];
+
+function initResultMapIfNeeded(){
+  if (resultMap) return;
+  resultMap = L.map('resultMap', { zoomControl: true, attributionControl: true });
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
+    maxZoom: 19
+  }).addTo(resultMap);
+}
+
+function pointUTMForCsv(p){
+  return (p.e !== undefined && areaManualInfo)
+    ? { zone: areaManualInfo.zone, hemi: areaManualInfo.isNorth ? 'N' : 'S', easting: p.e, northing: p.n }
+    : toUTM(p.lat, p.lon);
+}
+
+function drawResultPolygon(){
+  initResultMapIfNeeded();
+  if (resultPolygon){ resultMap.removeLayer(resultPolygon); resultPolygon = null; }
+  resultMarkers.forEach(m => resultMap.removeLayer(m));
+  resultMarkers = [];
+
+  // Rojo intenso, tal como se pidió, para que el polígono resalte sobre
+  // la imagen satelital.
+  resultPolygon = L.polygon(areaPoints.map(p => [p.lat, p.lon]), {
+    color: '#ff2020', weight: 3, fillColor: '#ff2020', fillOpacity: 0.35
+  }).addTo(resultMap);
+
+  areaPoints.forEach((p) => {
+    const m = L.circleMarker([p.lat, p.lon], {
+      radius: 5, color: '#ffffff', weight: 2, fillColor: '#ff2020', fillOpacity: 1
+    }).addTo(resultMap);
+    resultMarkers.push(m);
+  });
+
+  // El contenedor del mapa está oculto (display:none) hasta que se
+  // muestra esta pantalla; Leaflet necesita invalidateSize() después de
+  // que el contenedor tenga tamaño real, si no los tiles quedan mal
+  // recortados o el mapa aparece gris.
+  requestAnimationFrame(() => {
+    resultMap.invalidateSize();
+    resultMap.fitBounds(resultPolygon.getBounds(), { padding: [24, 24] });
+  });
+}
+
+function finishAndShowResults(){
+  lastAreaM2 = computeAreaM2();
+  document.getElementById('areaM2').textContent = lastAreaM2.toFixed(1);
+  document.getElementById('areaHa').textContent = (lastAreaM2 / 10000).toFixed(4);
+  document.getElementById('areaKm2').textContent = (lastAreaM2 / 1000000).toFixed(6);
+  showScreen('screenResults');
+  drawResultPolygon();
+}
+
+document.getElementById('btnNewCalc').onclick = () => {
+  resetAreaState();
+  resetManualForm();
+  inputMode = null;
+  showScreen('screenHome');
+};
+
+// ---------- Exportar CSV ----------
+function csvEscape(val){
+  const s = String(val);
+  return /[",;\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
+function exportAreaCSV(filenamePrefix){
+  const rows = [['Punto', 'Latitud', 'Longitud', 'Huso', 'Hemisferio', 'Este_X', 'Norte_Y', 'Precision_m']];
+  areaPoints.forEach((p, i) => {
+    const u = pointUTMForCsv(p);
+    rows.push([
+      'P' + (i + 1),
+      p.lat.toFixed(6),
+      p.lon.toFixed(6),
+      u.zone,
+      u.hemi,
+      u.easting.toFixed(2),
+      u.northing.toFixed(2),
+      p.acc !== undefined ? p.acc.toFixed(1) : ''
+    ]);
+  });
+  rows.push([]);
+  rows.push(['Resumen']);
+  rows.push(['Vertices', areaPoints.length]);
+  rows.push(['Area_m2', lastAreaM2.toFixed(1)]);
+  rows.push(['Area_ha', (lastAreaM2 / 10000).toFixed(4)]);
+  rows.push(['Area_km2', (lastAreaM2 / 1000000).toFixed(6)]);
+
+  const csv = rows.map(r => r.map(csvEscape).join(',')).join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const ts = new Date();
+  const pad = (v) => String(v).padStart(2, '0');
+  const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}`;
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${filenamePrefix}_${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+document.getElementById('btnDownloadCsv').onclick = () => exportAreaCSV('calculo_areas');
+</script>
+</body>
+</html>
