@@ -37,18 +37,27 @@
   .screen.active{display:flex;}
 
   /* ---------- Pantalla 1: inicio ---------- */
-  #screenHome{justify-content:center;align-items:stretch;padding:24px 20px calc(20px + env(safe-area-inset-bottom));}
-  .homeWrap{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;gap:34px;}
-  #screenHome h1{
-    font-size:26px;font-weight:800;letter-spacing:.5px;text-align:center;margin:0;
-    color:var(--text);text-transform:uppercase;line-height:1.3;
+  #screenHome{position:relative;overflow:hidden;padding:0;justify-content:flex-start;align-items:stretch;background:#10121a;}
+  .heroScene{position:absolute;inset:0;z-index:0;}
+  .heroScene svg{width:100%;height:100%;display:block;}
+  .homeContent{
+    position:relative;z-index:1;height:100%;width:100%;
+    display:flex;flex-direction:column;
+    padding:calc(18px + env(safe-area-inset-top)) 20px calc(20px + env(safe-area-inset-bottom));
   }
-  .homeButtons{display:flex;gap:14px;width:100%;max-width:520px;}
+  .homeSpacer{flex:1 1 auto;min-height:10px;}
+  #screenHome h1{
+    font-size:24px;font-weight:800;letter-spacing:.5px;text-align:center;margin:0;
+    color:#fff;text-transform:uppercase;line-height:1.3;
+    text-shadow:0 2px 10px rgba(0,0,0,.7),0 1px 3px rgba(0,0,0,.85);
+  }
+  .homeButtons{display:flex;gap:14px;width:100%;max-width:520px;margin:0 auto;}
   .bigBtn{
     flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:var(--radius-lg);
     color:var(--text);padding:26px 12px;display:flex;flex-direction:column;align-items:center;
     justify-content:center;gap:10px;font-size:15px;font-weight:700;line-height:1.35;cursor:pointer;
     min-height:170px;touch-action:manipulation;transition:transform .08s ease, filter .15s ease, border-color .15s ease;
+    box-shadow:0 6px 18px rgba(0,0,0,.35);
   }
   .bigBtn .ic{font-size:34px;}
   .bigBtn:active{transform:scale(0.96);filter:brightness(1.1);}
@@ -57,9 +66,13 @@
   .bigBtn.right{border-color:#3f6a8a;}
   .bigBtn.right:active{background:rgba(80,150,200,.12);}
   .credit{
-    text-align:center;font-size:12px;color:var(--muted);padding-top:10px;
+    text-align:center;font-size:12px;color:#d7dbe2;padding-top:10px;
+    text-shadow:0 1px 4px rgba(0,0,0,.8);
   }
   .credit strong{color:var(--amber);font-weight:700;}
+  @media (prefers-reduced-motion: reduce){
+    .heroScene *{animation-duration:.001s !important;animation-iteration-count:1 !important;}
+  }
 
   /* ---------- Pantalla 2: captura de datos ---------- */
   #screenInput{padding:calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));overflow-y:auto;}
@@ -158,14 +171,155 @@
 
   <!-- ---------- Pantalla 1: inicio ---------- -->
   <div id="screenHome" class="screen active">
-    <div class="homeWrap">
+    <!-- Escena de fondo: sabana al atardecer con el tepuy Roraima (lindero
+         Venezuela / Esequibo) y, en primer plano, un hombre de espaldas
+         mirando su teléfono mientras una red de satélites orbita sobre su
+         cabeza enviándole señal (los pulsos animados hacen las veces del
+         "gif" pedido: un loop SVG/SMIL, liviano y nítido en cualquier
+         resolución, en vez de un archivo .gif binario). -->
+    <div class="heroScene" aria-hidden="true">
+      <svg viewBox="0 0 400 844" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
+        <defs>
+          <linearGradient id="skyGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0c1024"/>
+            <stop offset="32%" stop-color="#1c2a52"/>
+            <stop offset="62%" stop-color="#6a4a6f"/>
+            <stop offset="84%" stop-color="#d97a4f"/>
+            <stop offset="100%" stop-color="#f2a35c"/>
+          </linearGradient>
+          <linearGradient id="groundGrad1" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#2c4a30"/>
+            <stop offset="100%" stop-color="#182a1a"/>
+          </linearGradient>
+          <linearGradient id="groundGrad2" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#152018"/>
+            <stop offset="100%" stop-color="#070b08"/>
+          </linearGradient>
+          <radialGradient id="phoneGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#bfe8ff" stop-opacity=".95"/>
+            <stop offset="100%" stop-color="#bfe8ff" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+
+        <!-- Cielo de atardecer -->
+        <rect x="0" y="0" width="400" height="640" fill="url(#skyGrad)"/>
+
+        <!-- Estrellas tenues en la parte alta del cielo -->
+        <g fill="#ffffff">
+          <circle cx="34" cy="58" r="1" opacity=".7"><animate attributeName="opacity" values=".7;.15;.7" dur="3.1s" repeatCount="indefinite"/></circle>
+          <circle cx="78" cy="110" r=".8" opacity=".5"><animate attributeName="opacity" values=".5;.1;.5" dur="2.4s" begin="-.6s" repeatCount="indefinite"/></circle>
+          <circle cx="140" cy="46" r="1.1" opacity=".8"><animate attributeName="opacity" values=".8;.2;.8" dur="3.6s" begin="-1.2s" repeatCount="indefinite"/></circle>
+          <circle cx="330" cy="70" r="1" opacity=".65"><animate attributeName="opacity" values=".65;.1;.65" dur="2.8s" begin="-.4s" repeatCount="indefinite"/></circle>
+          <circle cx="368" cy="130" r=".8" opacity=".55"><animate attributeName="opacity" values=".55;.15;.55" dur="3.3s" begin="-1.8s" repeatCount="indefinite"/></circle>
+          <circle cx="20" cy="170" r=".7" opacity=".5"><animate attributeName="opacity" values=".5;.1;.5" dur="2.6s" begin="-1s" repeatCount="indefinite"/></circle>
+          <circle cx="250" cy="34" r=".8" opacity=".6"><animate attributeName="opacity" values=".6;.15;.6" dur="3s" begin="-2s" repeatCount="indefinite"/></circle>
+          <circle cx="300" cy="150" r="1" opacity=".5"><animate attributeName="opacity" values=".5;.1;.5" dur="2.9s" begin="-.9s" repeatCount="indefinite"/></circle>
+        </g>
+
+        <!-- Tepuy lejano y difuso (profundidad) -->
+        <path d="M18,596 L34,548 L44,534 L96,532 L104,546 L118,598 Z" fill="#5b5578" opacity=".45"/>
+
+        <!-- Tepuy Roraima: meseta que marca el lindero Venezuela/Esequibo -->
+        <path d="M118,634 L136,526 L146,466 L152,446 L292,442 L299,462 L309,522 L326,634 Z" fill="#463f5c"/>
+        <path d="M152,446 L292,442 L299,462 L146,466 Z" fill="#5c5476"/>
+        <path d="M152,446 L292,442" stroke="#ffcf9a" stroke-width="2" stroke-linecap="round" opacity=".55"/>
+        <path d="M175,466 L182,590 M225,462 L216,610 M260,464 L268,585" stroke="#332e46" stroke-width="2" opacity=".4" stroke-linecap="round"/>
+
+        <!-- Sabana: dos capas para dar profundidad -->
+        <path d="M0,636 C60,616 120,656 200,630 C280,608 340,640 400,618 L400,844 L0,844 Z" fill="url(#groundGrad1)"/>
+        <g fill="#233c26" opacity=".8">
+          <ellipse cx="60" cy="648" rx="10" ry="4"/>
+          <ellipse cx="340" cy="636" rx="14" ry="5"/>
+          <ellipse cx="110" cy="660" rx="7" ry="3"/>
+        </g>
+        <path d="M0,706 C90,686 170,716 250,694 C320,676 366,702 400,688 L400,844 L0,844 Z" fill="url(#groundGrad2)"/>
+        <g fill="#0c150d" opacity=".9">
+          <ellipse cx="46" cy="726" rx="13" ry="5"/>
+          <ellipse cx="356" cy="712" rx="16" ry="6"/>
+          <path d="M300,726 L303,700 M298,712 L308,706 M298,716 L307,720" stroke="#0c150d" stroke-width="2" stroke-linecap="round"/>
+        </g>
+
+        <!-- Hombre de espaldas mirando su teléfono (a media distancia,
+             junto a la base del tepuy, para que quede POR ENCIMA de las
+             tarjetas de botones y no detrás de ellas) -->
+        <g>
+          <ellipse cx="205" cy="634" rx="15" ry="3.5" fill="#000" opacity=".3"/>
+          <path d="M195,632 L198,600 L193,600 L197,570 L214,570 L218,600 L213,600 L216,632 Z" fill="#12151d"/>
+          <path d="M192,571 C192,561 197,552 205,552 C213,552 218,561 218,571 L216,574 L194,574 Z" fill="#14171f"/>
+          <circle cx="205" cy="546" r="10" fill="#14171f"/>
+          <path d="M216,574 C224,570 230,560 232,546" stroke="#14171f" stroke-width="6.5" stroke-linecap="round" fill="none"/>
+        </g>
+
+        <!-- Teléfono en su mano, con brillo de pantalla -->
+        <circle cx="234" cy="541" r="12" fill="url(#phoneGlow)">
+          <animate attributeName="opacity" values=".55;.9;.55" dur="2.2s" repeatCount="indefinite"/>
+        </circle>
+        <rect x="228.5" y="530" width="11" height="20" rx="2" fill="#0a0c11" stroke="#3a4a5c" stroke-width=".8"/>
+        <rect x="230.3" y="532.5" width="7.4" height="13.5" rx=".8" fill="#8fd6ff" opacity=".85"/>
+
+        <!-- Anillo orbital de satélites sobre su cabeza -->
+        <ellipse cx="205" cy="486" rx="72" ry="30" fill="none" stroke="#ffffff" stroke-opacity=".14" stroke-width="1" stroke-dasharray="2 5"/>
+
+        <!-- Haces de señal: satélite -> teléfono, pulso que va y viene -->
+        <g stroke="#f2b563" stroke-width="1.2" fill="none" opacity=".6">
+          <path d="M205,456 L234,541" stroke-dasharray="4 5">
+            <animate attributeName="stroke-dashoffset" values="0;18;0" dur="2.4s" repeatCount="indefinite"/>
+          </path>
+          <path d="M141,470 L234,541" stroke-dasharray="4 5">
+            <animate attributeName="stroke-dashoffset" values="0;18;0" dur="2.6s" begin="-.8s" repeatCount="indefinite"/>
+          </path>
+          <path d="M266,470 L234,541" stroke-dasharray="4 5">
+            <animate attributeName="stroke-dashoffset" values="0;18;0" dur="2.5s" begin="-1.5s" repeatCount="indefinite"/>
+          </path>
+        </g>
+        <circle r="2" fill="#ffe1ad">
+          <animateMotion path="M205,456 L234,541 L205,456" keyPoints="0;.5;1" keyTimes="0;.5;1" dur="2.6s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.85;1" dur="2.6s" repeatCount="indefinite"/>
+        </circle>
+        <circle r="1.8" fill="#ffe1ad">
+          <animateMotion path="M141,470 L234,541 L141,470" keyPoints="0;.5;1" keyTimes="0;.5;1" dur="2.9s" begin="-.9s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.85;1" dur="2.9s" begin="-.9s" repeatCount="indefinite"/>
+        </circle>
+        <circle r="1.8" fill="#ffe1ad">
+          <animateMotion path="M266,470 L234,541 L266,470" keyPoints="0;.5;1" keyTimes="0;.5;1" dur="2.7s" begin="-1.7s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;.15;.85;1" dur="2.7s" begin="-1.7s" repeatCount="indefinite"/>
+        </circle>
+
+        <!-- Satélites orbitando (se mantienen en pie: animateMotion sin
+             rotate="auto" traslada el grupo sin girar el ícono) -->
+        <g>
+          <rect x="-2.2" y="-1.8" width="4.4" height="3.6" rx=".8" fill="#d7deea"/>
+          <rect x="-8" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <rect x="3.6" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <circle r="1" fill="#f2b563"><animate attributeName="opacity" values="1;.2;1" dur="1.4s" repeatCount="indefinite"/></circle>
+          <animateMotion path="M133,486 A72,30 0 1 1 277,486 A72,30 0 1 1 133,486" dur="16s" repeatCount="indefinite"/>
+        </g>
+        <g>
+          <rect x="-2.2" y="-1.8" width="4.4" height="3.6" rx=".8" fill="#d7deea"/>
+          <rect x="-8" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <rect x="3.6" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <circle r="1" fill="#f2b563"><animate attributeName="opacity" values="1;.2;1" dur="1.6s" begin="-.5s" repeatCount="indefinite"/></circle>
+          <animateMotion path="M133,486 A72,30 0 1 1 277,486 A72,30 0 1 1 133,486" dur="16s" begin="-5.3s" repeatCount="indefinite"/>
+        </g>
+        <g>
+          <rect x="-2.2" y="-1.8" width="4.4" height="3.6" rx=".8" fill="#d7deea"/>
+          <rect x="-8" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <rect x="3.6" y="-1" width="5.2" height="2" fill="#8fb4e0"/>
+          <circle r="1" fill="#f2b563"><animate attributeName="opacity" values="1;.2;1" dur="1.5s" begin="-1s" repeatCount="indefinite"/></circle>
+          <animateMotion path="M133,486 A72,30 0 1 1 277,486 A72,30 0 1 1 133,486" dur="16s" begin="-10.6s" repeatCount="indefinite"/>
+        </g>
+      </svg>
+    </div>
+
+    <div class="homeContent">
       <h1>Levantamiento Planimétrico</h1>
+      <div class="homeSpacer"></div>
       <div class="homeButtons">
         <button class="bigBtn left" id="btnGoRecord"><span class="ic">📍</span>Grabar puntos<br>en campo</button>
         <button class="bigBtn right" id="btnGoManual"><span class="ic">🔢</span>Introducir<br>Coordenadas</button>
       </div>
+      <div class="credit">Creado por <strong>Ing° VHMG</strong></div>
     </div>
-    <div class="credit">Creado por <strong>Ing° VHMG</strong></div>
   </div>
 
   <!-- ---------- Pantalla 2: captura de datos ---------- -->
