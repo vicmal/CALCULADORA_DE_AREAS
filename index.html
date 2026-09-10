@@ -665,9 +665,29 @@ document.getElementById('btnDownloadCsv').onclick = () => exportAreaCSV('levanta
 
 // ============================================================
 // Exportación DXF (función Pro)
-// Genera un plano en formato DXF ASCII (AutoCAD R2007 / AC1021,
-// que usa UTF-8 nativamente y evita problemas de codificación con
-// acentos y el símbolo de grado), sin librerías externas.
+// Genera un plano en formato DXF ASCII, sin librerías externas.
+//
+// Versión DXF: R12 / AC1009 (no AC1021/R2007 como en una versión
+// anterior). Motivo del cambio — AutoCAD 2022 no reconocía el archivo
+// exportado: a partir de R13 (incluye AC1015/2000 y AC1021/2007) el
+// formato DXF exige una estructura "orientada a objetos" con tablas
+// BLOCK_RECORD y APPID, una sección BLOCKS con los bloques *Model_Space/
+// *Paper_Space y una sección OBJECTS con el diccionario raíz; sin eso,
+// AutoCAD puede rechazar el archivo aunque lectores más permisivos
+// (como la librería ezdxf usada para las pruebas de este proyecto) lo
+// acepten sin quejarse. El escritor de este archivo nunca generó esas
+// secciones. R12 no las necesita en absoluto (es el formato "plano"
+// previo a ese cambio de arquitectura), es el dialecto DXF más
+// compatible que existe, y coincide con lo pedido originalmente en el
+// prompt de este proyecto ("R12 o AC1015/2000 para amplia
+// compatibilidad").
+//
+// Como R12 es anterior a Unicode, el texto visible (tildes, eñes) ya
+// no puede ir en UTF-8: el archivo completo se codifica en bytes
+// Windows-1252/Latin-1 al construirlo (ver latin1Bytes() más abajo),
+// que es como AutoCAD siempre ha interpretado acentos en DXF clásico.
+// El símbolo de grado sigue usando el código de control %%d, que
+// funciona igual en cualquier versión de DXF.
 //
 // IMPORTANTE — dos convenciones numéricas distintas conviven aquí:
 //   - dxfNum(): formatea los valores que van en los códigos de grupo
@@ -752,47 +772,53 @@ class DxfWriter{
   toString(){ return this.lines.join('\r\n') + '\r\n'; }
 }
 
+// Entidades en formato R12 clásico: sin marcadores de subclase (100,
+// AcDbXxx — eso es propio de R13 en adelante) y sin handle (5) de
+// entidad, porque el header no declara $HANDLING 1. Es la forma más
+// simple y más ampliamente compatible de escribir estas entidades.
 function emitLine(w, layer, x1, y1, x2, y2){
-  w.push(0, 'LINE'); w.push(5, w.nextHandle());
-  w.push(100, 'AcDbEntity'); w.push(8, layer); w.push(100, 'AcDbLine');
+  w.push(0, 'LINE'); w.push(8, layer);
   w.push(10, dxfNum(x1)); w.push(20, dxfNum(y1)); w.push(30, '0.0');
   w.push(11, dxfNum(x2)); w.push(21, dxfNum(y2)); w.push(31, '0.0');
 }
 
 function emitCircle(w, layer, x, y, r){
-  w.push(0, 'CIRCLE'); w.push(5, w.nextHandle());
-  w.push(100, 'AcDbEntity'); w.push(8, layer); w.push(100, 'AcDbCircle');
+  w.push(0, 'CIRCLE'); w.push(8, layer);
   w.push(10, dxfNum(x)); w.push(20, dxfNum(y)); w.push(30, '0.0');
   w.push(40, dxfNum(Math.max(r, 0.01)));
 }
 
 function emitText(w, layer, x, y, height, text, opts = {}){
   const halign = opts.halign || 0; // 0 izquierda, 1 centrado
-  w.push(0, 'TEXT'); w.push(5, w.nextHandle());
-  w.push(100, 'AcDbEntity'); w.push(8, layer); w.push(100, 'AcDbText');
+  w.push(0, 'TEXT'); w.push(8, layer);
   w.push(10, dxfNum(x)); w.push(20, dxfNum(y)); w.push(30, '0.0');
   w.push(40, dxfNum(Math.max(height, 0.01)));
   w.push(1, String(text).replace(/°/g, '%%d'));
   if (opts.rotation) w.push(50, dxfNum(opts.rotation, 2));
   if (halign !== 0){
     w.push(72, halign);
-    w.push(100, 'AcDbText');
     w.push(11, dxfNum(x)); w.push(21, dxfNum(y)); w.push(31, '0.0');
   }
 }
 
 function emitLwpolylineClosed(w, layer, pts){
-  w.push(0, 'LWPOLYLINE'); w.push(5, w.nextHandle());
-  w.push(100, 'AcDbEntity'); w.push(8, layer); w.push(100, 'AcDbPolyline');
-  w.push(90, pts.length); w.push(70, 1);
-  pts.forEach(p => { w.push(10, dxfNum(p.x)); w.push(20, dxfNum(p.y)); });
+  // R12 no tiene LWPOLYLINE (llegó en R14/AC1014): se usa POLYLINE +
+  // una entidad VERTEX por punto + SEQEND, el formato clásico de
+  // polilínea 2D cerrada que cualquier versión de AutoCAD reconoce.
+  w.push(0, 'POLYLINE'); w.push(8, layer);
+  w.push(66, 1); w.push(70, 1); // 66=sigue lista de vértices, 70 bit1=cerrada
+  w.push(10, '0.0'); w.push(20, '0.0'); w.push(30, '0.0');
+  pts.forEach(p => {
+    w.push(0, 'VERTEX'); w.push(8, layer);
+    w.push(10, dxfNum(p.x)); w.push(20, dxfNum(p.y)); w.push(30, '0.0');
+  });
+  w.push(0, 'SEQEND');
 }
 
 // ---------- Cabecera, capas, estilo y tipo de línea ----------
 function writeDxfHeader(w){
   w.push(0, 'SECTION'); w.push(2, 'HEADER');
-  w.push(9, '$ACADVER'); w.push(1, 'AC1021'); // DXF R2007: UTF-8 nativo
-  w.push(9, '$INSUNITS'); w.push(70, 6); // 6 = metros
+  w.push(9, '$ACADVER'); w.push(1, 'AC1009'); // DXF R12: el dialecto más compatible; ver nota arriba
   w.push(0, 'ENDSEC');
 }
 
@@ -931,6 +957,9 @@ function buildDxf(pts, sides, meta){
   const w = new DxfWriter();
   writeDxfHeader(w);
   writeDxfTables(w);
+  // Sección BLOCKS vacía: los lectores DXF (AutoCAD incluido) la esperan
+  // presente en R12 aunque el plano no defina bloques propios.
+  w.push(0, 'SECTION'); w.push(2, 'BLOCKS'); w.push(0, 'ENDSEC');
   w.push(0, 'SECTION'); w.push(2, 'ENTITIES');
 
   const bbox = computeBbox(pts);
@@ -982,6 +1011,23 @@ function buildDxf(pts, sides, meta){
   return w.toString();
 }
 
+// DXF R12 es anterior a Unicode: AutoCAD interpreta el texto de un DXF
+// clásico byte a byte según la página de códigos ANSI del sistema
+// (Windows-1252 en español), no como UTF-8. Como todos los acentos y
+// la Ñ usados en este plano (á é í ó ú ñ Á É Í Ó Ú Ñ ¿ ¡) coinciden en
+// Windows-1252 con su mismo código Unicode por debajo de 256, basta
+// con tomar cada carácter de la cadena y escribirlo como un solo byte
+// (equivalente a Latin-1) en vez de dejar que el Blob lo codifique en
+// UTF-8 por defecto.
+function latin1Bytes(str){
+  const bytes = new Uint8Array(str.length);
+  for (let i = 0; i < str.length; i++){
+    const code = str.charCodeAt(i);
+    bytes[i] = code <= 0xFF ? code : 0x3F; // '?' de reserva por si aparece algún carácter fuera de rango
+  }
+  return bytes;
+}
+
 // ---------- Exportación / entrega Pro ----------
 async function exportAreaDXF(filenamePrefix){
   if (areaPoints.length < 3) return;
@@ -999,7 +1045,7 @@ async function exportAreaDXF(filenamePrefix){
   const pad = v => String(v).padStart(2, '0');
   const stamp = `${ts.getFullYear()}${pad(ts.getMonth() + 1)}${pad(ts.getDate())}_${pad(ts.getHours())}${pad(ts.getMinutes())}`;
   const filename = `${filenamePrefix}_${stamp}.dxf`;
-  const blob = new Blob([dxfContent], { type: 'application/dxf' });
+  const blob = new Blob([latin1Bytes(dxfContent)], { type: 'application/dxf' });
 
   // Entrega vía panel nativo de compartir (email, WhatsApp, etc.) cuando
   // el navegador lo soporta; si no, cae a descarga directa del archivo.
