@@ -350,7 +350,7 @@
         <button class="bigBtn left" id="btnGoRecord"><span class="ic">📍</span>Grabar puntos<br>en campo</button>
         <button class="bigBtn right" id="btnGoManual"><span class="ic">🔢</span>Introducir<br>Coordenadas</button>
       </div>
-      <div class="credit">Creado por <strong>Ing° VHMG</strong></div>
+      <div class="credit">Creado por <strong>Ing° VHMG</strong> · @victorhugomalave</div>
     </div>
   </div>
 
@@ -361,7 +361,7 @@
       <h2 id="inputTitle">Grabar puntos</h2>
     </div>
 
-    <div id="status">Toca "Grabar punto aquí" en cada vértice del terreno.</div>
+    <div id="status">Toca "Grabar punto aquí" en cada vértice: se mide 20 segundos y se guarda la mediana, no una lectura suelta.</div>
 
     <div id="recordBlock" style="display:none;">
       <div class="row">
@@ -375,7 +375,7 @@
       <div class="row">
         <button class="primary" id="btnRecordFinish">✔ Finalizar</button>
       </div>
-      <div class="hint">Camina hasta cada vértice del terreno y toca "Grabar punto aquí" (mínimo 3 puntos).</div>
+      <div class="hint">Camina hasta cada vértice y toca "Grabar punto aquí" (mínimo 3 puntos). Quédate quieto 20 segundos: la app guarda la mediana de todas las lecturas de esos 20 s, no una lectura suelta.</div>
     </div>
 
     <div id="manualBlock" style="display:none;">
@@ -433,7 +433,7 @@
       <button class="primary" id="btnNewCalc">🔄 Nuevo cálculo</button>
       <button id="btnDownloadCsv">📄 CSV</button>
       <button id="btnDownloadDxf">📐 DXF <span style="opacity:.65;font-weight:600;">(Pro)</span></button>
-      <span class="creditSmall">Creado por <strong>Ing° VHMG</strong></span>
+      <span class="creditSmall">Creado por <strong>Ing° VHMG</strong> · @victorhugomalave</span>
     </div>
   </div>
 
@@ -448,6 +448,10 @@
 // pantallas: inicio -> captura de datos -> resultados; misma
 // conversión a UTM, shoelace, fusión de huso por primer vértice,
 // indicador de calidad por precisión) y agrega la función Pro de
+// v2 (2026-10-30): captura GPS por mediana de 20 s (nunca una lectura
+// suelta), persistencia mínima del levantamiento en curso en
+// localStorage, service worker para la app sin internet y confirmación
+// antes de descartar un levantamiento en curso.
 // exportación a .dxf (tablas de coordenadas/linderos, rumbo,
 // cuadrícula UTM, rótulo) — ver más abajo.
 // ============================================================
@@ -478,11 +482,63 @@ function qualityTier(acc){
 }
 
 // ---------- Estado ----------
-let areaPoints = [];      // { lat, lon, e?, n?, acc? }
+let areaPoints = [];      // { lat, lon, e?, n?, acc?, nLecturas? }
 let areaRefZone = null;   // huso/hemisferio de referencia (primer vértice) para el cálculo planar
 let areaManualInfo = null;// { zone, isNorth } cuando el polígono viene de coordenadas UTM ingresadas a mano
 let inputMode = null;     // 'record' | 'manual'
 let lastAreaM2 = 0;
+
+// ---------- Persistencia mínima (solo el levantamiento GPS en curso) ----------
+// Se guarda únicamente en este teléfono, sin cuentas ni nube: si la
+// página se recarga, entra una llamada o se cierra el navegador, el
+// levantamiento vuelve tal como iba. Se borra al finalizar, al cancelar
+// con confirmación o al empezar un levantamiento nuevo.
+const PENDING_KEY = 'levantamiento-planimetrico-pendiente-v1';
+function savePending(){
+  try {
+    if (inputMode !== 'record') return;
+    if (areaPoints.length === 0){ localStorage.removeItem(PENDING_KEY); return; }
+    localStorage.setItem(PENDING_KEY, JSON.stringify({
+      points: areaPoints,
+      refZone: areaRefZone,
+      savedAt: new Date().toISOString()
+    }));
+  } catch (err){ /* almacenamiento lleno o bloqueado: la app sigue, sin persistencia */ }
+}
+function clearPending(){
+  try { localStorage.removeItem(PENDING_KEY); } catch (err){}
+}
+function restorePending(){
+  try {
+    const raw = localStorage.getItem(PENDING_KEY);
+    if (!raw) return false;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.points) || data.points.length === 0) return false;
+    const pts = data.points.filter(p => p && isFinite(p.lat) && isFinite(p.lon));
+    if (pts.length === 0) return false;
+    areaPoints = pts;
+    areaRefZone = data.refZone || null;
+    inputMode = 'record';
+    inputTitle.textContent = 'Grabar puntos en campo';
+    recordBlock.style.display = 'block';
+    manualBlock.style.display = 'none';
+    renderPointsList();
+    statusEl.textContent = `Levantamiento restaurado: ${pts.length} punto(s) guardado(s). Continúa donde ibas.`;
+    statusEl.className = 'locked';
+    showScreen('screenInput');
+    return true;
+  } catch (err){ return false; }
+}
+
+// ---------- Mediana (robusta frente a extremos; el promedio no lo es) ----------
+// Con un número par de lecturas, la mediana es el promedio de las dos
+// centrales: sigue siendo robusta, porque los extremos quedan fuera.
+function median(values){
+  const s = values.filter(v => isFinite(v)).slice().sort((a, b) => a - b);
+  if (s.length === 0) return NaN;
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
+}
 
 const statusEl = document.getElementById('status');
 
@@ -504,13 +560,14 @@ function resetAreaState(){
 }
 
 function startFlow(mode){
+  clearPending();
   inputMode = mode;
   resetAreaState();
   if (mode === 'record'){
     inputTitle.textContent = 'Grabar puntos en campo';
     recordBlock.style.display = 'block';
     manualBlock.style.display = 'none';
-    statusEl.textContent = 'Toca "Grabar punto aquí" en cada vértice del terreno.';
+    statusEl.textContent = 'Toca "Grabar punto aquí" en cada vértice: se mide 20 segundos y se guarda la mediana, no una lectura suelta.';
     statusEl.className = '';
   } else {
     inputTitle.textContent = 'Introducir coordenadas';
@@ -527,6 +584,11 @@ document.getElementById('btnGoRecord').onclick = () => startFlow('record');
 document.getElementById('btnGoManual').onclick = () => startFlow('manual');
 
 document.getElementById('btnBackHome').onclick = () => {
+  if (inputMode === 'record' && (areaPoints.length > 0 || sampling)){
+    if (!confirm(`¿Volver al inicio y descartar el levantamiento? Se perderán ${areaPoints.length} punto(s) grabado(s).`)) return;
+    stopSamplingSilently();
+  }
+  clearPending();
   resetAreaState();
   resetManualForm();
   inputMode = null;
@@ -544,60 +606,145 @@ function renderPointsList(){
     return;
   }
   pointsListEl.innerHTML = areaPoints.map((p, i) => {
-    const u = toUTM(p.lat, p.lon);
+    // Sin proj4 (librería sin cargar, p. ej. primer intento sin internet
+    // y sin caché), no se cuelga la lista: se muestra lat/lon y listo.
+    let utmTxt = '';
+    try { utmTxt = ' — ' + fmtUTM(toUTM(p.lat, p.lon)); } catch (err){}
     const tier = p.acc !== undefined ? qualityTier(p.acc) : null;
     const accTxt = p.acc !== undefined
       ? ` · ±${p.acc.toFixed(1)} m <span class="qtag ${tier.cls}">(${tier.label.toLowerCase()})</span>`
       : '';
-    return `<div><span class="pt-idx">V${i+1}</span> ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} — ${fmtUTM(u)}${accTxt}</div>`;
+    const medTxt = p.nLecturas ? ` · mediana de ${p.nLecturas} lecturas` : '';
+    return `<div><span class="pt-idx">V${i+1}</span> ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${utmTxt}${accTxt}${medTxt}</div>`;
   }).join('');
 }
 
+// ---------- Medición por vértice: 20 s continuos, mediana, nada suelto ----------
+// La afirmación anterior ("lectura cruda, sin promediar") era honesta
+// sobre lo que hacía el código, pero débil como medición: una sola
+// lectura GPS puede ser un extremo. La práctica correcta es un conjunto
+// de lecturas sobre el mismo punto y un estadístico robusto. Se usa la
+// mediana por componente (latitud, longitud y precisión por separado)
+// porque, a diferencia del promedio, no la arrastran los extremos.
+// REGLA DURA: mientras no pasen los 20 s, NO se suelta ninguna
+// coordenada; si no llega ninguna lectura en 20 s, no se graba vértice.
+const MEDIAN_SECONDS = 20;
+let sampling = null; // { watchId, timerId, intervalId, samples, nextIdx, startedAt }
+function stopSamplingSilently(){
+  if (!sampling) return;
+  try { navigator.geolocation.clearWatch(sampling.watchId); } catch (err){}
+  clearTimeout(sampling.timerId);
+  clearInterval(sampling.intervalId);
+  sampling = null;
+  recording = false;
+  btnRecordPoint.disabled = false;
+  btnRecordPoint.textContent = '📍 Grabar punto aquí';
+}
+function finishSampling(){
+  if (!sampling) return;
+  const { samples, nextIdx } = sampling;
+  stopSamplingSilently();
+  if (samples.length === 0){
+    statusEl.textContent = 'Sin lecturas GPS en 20 segundos: no se grabó ningún vértice. Quédate quieto, con cielo despejado, e inténtalo de nuevo.';
+    statusEl.className = 'err';
+    return;
+  }
+  const lat = median(samples.map(s => s.lat));
+  const lon = median(samples.map(s => s.lon));
+  const acc = median(samples.map(s => s.acc));
+  // Si el teléfono no reportó precisión en ninguna lectura, no se inventa
+  // un cero: el vértice queda sin precisión, y así se muestra y exporta.
+  areaPoints.push({ lat, lon, ...(isFinite(acc) ? { acc } : {}), nLecturas: samples.length });
+  renderPointsList();
+  savePending();
+  const tier = qualityTier(acc);
+  const accTxt = isFinite(acc) ? `± ${acc.toFixed(1)} m, ${tier.label.toLowerCase()}` : 'sin precisión reportada';
+  const pocos = samples.length < 5
+    ? ` ⚠ Solo ${samples.length} lecturas en 20 s: si puedes, deshaz este vértice y repítelo.`
+    : '';
+  statusEl.textContent = `Vértice ${areaPoints.length} grabado: mediana de ${samples.length} lecturas en 20 s (${accTxt}).${pocos}`;
+  statusEl.className = 'locked';
+}
 btnRecordPoint.onclick = () => {
+  // Si ya se está midiendo, el mismo botón cancela la medición (sin
+  // grabar nada: una medición incompleta no es un vértice).
+  if (sampling){
+    stopSamplingSilently();
+    statusEl.textContent = 'Medición cancelada: no se grabó ningún vértice.';
+    statusEl.className = '';
+    return;
+  }
   if (recording) return;
-  if (!navigator.geolocation){
-    statusEl.textContent = 'Este navegador no soporta geolocalización.';
+  if (!navigator.geolocation || typeof navigator.geolocation.watchPosition !== 'function'){
+    statusEl.textContent = 'Este navegador no permite medición GPS continua: no se puede grabar un vértice con mediana.';
     statusEl.className = 'err';
     return;
   }
   recording = true;
-  btnRecordPoint.disabled = true;
   const nextIdx = areaPoints.length + 1;
-  statusEl.textContent = `Buscando señal GPS para el vértice ${nextIdx}...`;
-  statusEl.className = '';
-
-  // Lectura cruda e independiente por vértice (sin promediar con lecturas
-  // anteriores): cada vértice debe representar una medición GPS real en
-  // ese punto exacto del terreno.
-  navigator.geolocation.getCurrentPosition((pos) => {
+  const startedAt = Date.now();
+  const samples = [];
+  const updateStatus = () => {
+    const left = Math.max(0, Math.ceil(MEDIAN_SECONDS - (Date.now() - startedAt) / 1000));
+    statusEl.textContent = `Midiendo vértice ${nextIdx}: quédate quieto… ${left} s restantes · ${samples.length} lecturas.`;
+    statusEl.className = '';
+  };
+  updateStatus();
+  btnRecordPoint.textContent = '⏹ Cancelar medición';
+  const watchId = navigator.geolocation.watchPosition((pos) => {
+    if (!sampling) return;
     const { latitude, longitude, accuracy } = pos.coords;
-    areaPoints.push({ lat: latitude, lon: longitude, acc: accuracy });
-    renderPointsList();
-    const tier = qualityTier(accuracy);
-    statusEl.textContent = `Vértice ${areaPoints.length} grabado (± ${accuracy.toFixed(1)} m, ${tier.label.toLowerCase()}).`;
-    statusEl.className = 'locked';
-    recording = false;
-    btnRecordPoint.disabled = false;
+    if (isFinite(latitude) && isFinite(longitude)){
+      samples.push({ lat: latitude, lon: longitude, acc: isFinite(accuracy) ? accuracy : NaN });
+    }
   }, (err) => {
-    statusEl.textContent = 'No se pudo obtener la ubicación: ' + err.message;
-    statusEl.className = 'err';
-    recording = false;
-    btnRecordPoint.disabled = false;
-  }, { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+    // Permiso denegado: no tiene sentido esperar 20 s. Un error
+    // transitorio, en cambio, no aborta la medición: se sigue esperando
+    // hasta cumplir los 20 s, para que la app no se cuelgue ni suelte
+    // un vértice a medias.
+    if (err && err.code === 1){
+      stopSamplingSilently();
+      statusEl.textContent = 'Permiso de ubicación denegado: no se pudo medir el vértice.';
+      statusEl.className = 'err';
+    }
+  }, { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 });
+  const timerId = setTimeout(finishSampling, MEDIAN_SECONDS * 1000);
+  const intervalId = setInterval(updateStatus, 1000);
+  sampling = { watchId, timerId, intervalId, samples, nextIdx, startedAt };
 };
 
 document.getElementById('btnRecordUndo').onclick = () => {
   areaPoints.pop();
   renderPointsList();
+  savePending();
 };
 
 document.getElementById('btnRecordCancel').onclick = () => {
+  if (areaPoints.length === 0 && !sampling){
+    resetAreaState();
+    inputMode = null;
+    showScreen('screenHome');
+    return;
+  }
+  if (!confirm(`¿Cancelar el levantamiento? Se perderán ${areaPoints.length} punto(s) grabado(s).`)) return;
+  stopSamplingSilently();
+  clearPending();
   resetAreaState();
   inputMode = null;
   showScreen('screenHome');
 };
 
 document.getElementById('btnRecordFinish').onclick = () => {
+  if (sampling){
+    statusEl.textContent = 'Termina o cancela la medición en curso antes de finalizar.';
+    statusEl.className = 'err';
+    return;
+  }
+  if (typeof proj4 === 'undefined'){
+    statusEl.textContent = 'La librería de conversión a UTM no está cargada (sin internet y sin caché todavía): no se puede calcular el área.';
+    statusEl.className = 'err';
+    return;
+  }
   if (areaPoints.length < 3){
     statusEl.textContent = `Graba al menos ${3 - areaPoints.length} punto(s) más antes de finalizar (mínimo 3 vértices).`;
     statusEl.className = 'err';
@@ -679,6 +826,10 @@ btnGenTable.onclick = () => {
 btnCancelManual.onclick = resetManualForm;
 
 btnCalcManual.onclick = () => {
+  if (typeof proj4 === 'undefined'){
+    setManualMsg('La librería de conversión UTM no está cargada (sin internet y sin caché todavía): no se puede calcular el área.', 'err');
+    return;
+  }
   const zone = parseInt(utmZoneInput.value, 10);
   const isNorth = utmHemiInput.value === 'N';
   const rows = Array.from(utmTableBody.querySelectorAll('tr'));
@@ -746,6 +897,9 @@ let resultMarkers = [];
 
 function initResultMapIfNeeded(){
   if (resultMap) return;
+  // Sin Leaflet (sin internet y sin caché todavía), el mapa no puede
+  // dibujarse, pero el área y las exportaciones no deben caerse con él.
+  if (typeof L === 'undefined') return false;
   resultMap = L.map('resultMap', { zoomControl: true, attributionControl: true });
   L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
     attribution: 'Tiles &copy; Esri — Source: Esri, Maxar, Earthstar Geographics',
@@ -760,7 +914,10 @@ function pointUTMForCsv(p){
 }
 
 function drawResultPolygon(){
-  initResultMapIfNeeded();
+  if (initResultMapIfNeeded() === false){
+    document.getElementById('resultMap').textContent = 'Mapa satelital no disponible sin conexión. El área, el CSV y el DXF sí están calculados con las coordenadas guardadas.';
+    return;
+  }
   if (resultPolygon){ resultMap.removeLayer(resultPolygon); resultPolygon = null; }
   resultMarkers.forEach(m => resultMap.removeLayer(m));
   resultMarkers = [];
@@ -789,6 +946,7 @@ function drawResultPolygon(){
 }
 
 function finishAndShowResults(){
+  clearPending();
   lastAreaM2 = computeAreaM2();
   document.getElementById('areaM2').textContent = lastAreaM2.toFixed(1);
   document.getElementById('areaHa').textContent = (lastAreaM2 / 10000).toFixed(4);
@@ -798,6 +956,7 @@ function finishAndShowResults(){
 }
 
 document.getElementById('btnNewCalc').onclick = () => {
+  clearPending();
   resetAreaState();
   resetManualForm();
   inputMode = null;
@@ -811,7 +970,7 @@ function csvEscape(val){
 }
 
 function exportAreaCSV(filenamePrefix){
-  const rows = [['Punto', 'Latitud', 'Longitud', 'Huso', 'Hemisferio', 'Este_X', 'Norte_Y', 'Precision_m']];
+  const rows = [['Punto', 'Latitud', 'Longitud', 'Huso', 'Hemisferio', 'Este_X', 'Norte_Y', 'Precision_m', 'Lecturas_mediana_n']];
   areaPoints.forEach((p, i) => {
     const u = pointUTMForCsv(p);
     rows.push([
@@ -822,7 +981,8 @@ function exportAreaCSV(filenamePrefix){
       u.hemi,
       u.easting.toFixed(2),
       u.northing.toFixed(2),
-      p.acc !== undefined ? p.acc.toFixed(1) : ''
+      p.acc !== undefined ? p.acc.toFixed(1) : '',
+      p.nLecturas !== undefined ? p.nLecturas : ''
     ]);
   });
   rows.push([]);
@@ -1245,7 +1405,7 @@ async function exportAreaDXF(filenamePrefix){
         await navigator.share({
           files: [file],
           title: 'Plano — Levantamiento Planimétrico',
-          text: 'Plano generado con Levantamiento Planimétrico (Ing° VHMG)'
+          text: 'Plano generado con Levantamiento Planimétrico · @victorhugomalave'
         });
         shared = true;
       }
@@ -1267,6 +1427,24 @@ async function exportAreaDXF(filenamePrefix){
 }
 
 document.getElementById('btnDownloadDxf').onclick = () => exportAreaDXF('levantamiento_planimetrico');
+
+// ---------- Service worker: la app, sin internet, después de la primera visita ----------
+// Solo se cachea lo que cabe y tiene sentido cachear: la app misma y sus
+// librerías (Leaflet, proj4). Las teselas satelitales NO se cachean:
+// son miles de imágenes, pesarían demasiado y no son el trabajo central.
+// Consecuencia honesta: sin internet, la app abre, calcula, exporta CSV
+// y DXF, y el polígono se dibuja sobre un fondo sin satélite. La
+// primera visita DEBE ser con internet, para llenar la caché; si el
+// registro falla (p. ej. abrir el archivo directo, sin servidor), la
+// app sigue funcionando con internet y no se cuelga por eso.
+if ('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  });
+}
+
+// Restaurar un levantamiento en curso, si lo hay (ver Persistencia mínima).
+restorePending();
 </script>
 </body>
 </html>
