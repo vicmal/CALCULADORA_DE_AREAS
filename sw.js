@@ -4,7 +4,7 @@
    para un trabajo cuyo centro es calcular y exportar).
    Si un recurso no se puede cachear, la instalación NO falla por eso:
    se cachea lo que se pudo y la app sigue funcionando con internet. */
-const CACHE_NAME = 'levantamiento-planimetrico-v2';
+const CACHE_NAME = 'levantamiento-planimetrico-v3';
 const APP_SHELL = [
   './',
   './index.html',

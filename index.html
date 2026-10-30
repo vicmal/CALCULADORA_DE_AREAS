@@ -158,6 +158,10 @@
   .formMsg.err::before{content:'⚠ ';}
   .hint{font-size:12px;color:var(--muted);text-align:center;margin-top:4px;line-height:1.4;}
 
+  /* ---------- Pantalla Datos del plano (v3 DXF PRO) ---------- */
+  #screenDatos{padding:calc(14px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));overflow-y:auto;}
+  #screenDatos .sectionTitle{font-size:13px;font-weight:700;color:var(--amber);margin:14px 0 8px;text-transform:uppercase;letter-spacing:.6px;}
+
   /* ---------- Pantalla 3: resultados (dividida horizontalmente) ---------- */
   #screenResults{}
   .resultsTop{
@@ -432,8 +436,50 @@
     <div class="resultsFooter">
       <button class="primary" id="btnNewCalc">🔄 Nuevo cálculo</button>
       <button id="btnDownloadCsv">📄 CSV</button>
+      <button id="btnGoDatos">✏️ Datos del plano</button>
       <button id="btnDownloadDxf">📐 DXF <span style="opacity:.65;font-weight:600;">(Pro)</span></button>
       <span class="creditSmall">Creado por <strong>Ing° VHMG</strong> · @victorhugomalave</span>
+    </div>
+  </div>
+
+  <!-- ---------- Pantalla Datos del plano (v3 DXF PRO) ---------- -->
+  <div id="screenDatos" class="screen">
+    <div class="inputHeader">
+      <button class="backBtn" id="btnBackResults">← Volver al plano</button>
+      <h2>Datos del plano</h2>
+    </div>
+    <div class="hint">Todo es opcional: lo que escribas aquí sale ya lleno en el DXF, no en blanco para editar en AutoCAD. Los datos del profesional se guardan en este teléfono para el próximo plano; los del lote se borran al hacer un nuevo cálculo.</div>
+    <div class="sectionTitle">Datos del plano</div>
+    <div class="row">
+      <div class="field"><div class="label">Localidad</div><input id="datoLocalidad" placeholder="Ej: Boquerón de Amana, Maturín"></div>
+      <div class="field"><div class="label">Propietario / Ocupante</div><input id="datoPropietario" placeholder="Ej: Favio Ramírez"></div>
+    </div>
+    <div class="row">
+      <div class="field"><div class="label">Levantó</div><input id="datoLevanto" placeholder="Nombre del profesional"></div>
+      <div class="field"><div class="label">Calculó</div><input id="datoCalculo" placeholder="Nombre del profesional"></div>
+    </div>
+    <div class="row">
+      <div class="field"><div class="label">Dibujó</div><input id="datoDibujo" placeholder="Nombre del profesional"></div>
+      <div class="field"><div class="label">Escala de impresión</div><input id="datoEscala" placeholder="Ej: 1:1000 (opcional)"></div>
+    </div>
+    <div class="row">
+      <div class="field"><div class="label">Hoja N°</div><input id="datoHoja" placeholder="Ej: 1"></div>
+    </div>
+    <div class="sectionTitle">Colindantes (linderos del lote)</div>
+    <div class="hint" style="text-align:left;margin-bottom:10px;">Escribe descripciones cortas, no frases largas, para que quepan en el cuadro del plano. Ej: Río Amana, Carretera a Boquerón, Terrenos de R. Dambre.</div>
+    <div class="row">
+      <div class="field"><div class="label">Lindero Norte</div><input id="datoColNorte" placeholder="Ej: Río Amana"></div>
+      <div class="field"><div class="label">Lindero Sur</div><input id="datoColSur" placeholder="Ej: Carretera a Boquerón"></div>
+    </div>
+    <div class="row">
+      <div class="field"><div class="label">Lindero Este</div><input id="datoColEste" placeholder="Ej: Terrenos de R. Dambre"></div>
+      <div class="field"><div class="label">Lindero Oeste</div><input id="datoColOeste" placeholder="Ej: Terrenos de Colectivos San Judas"></div>
+    </div>
+    <div class="row">
+      <button class="primary" id="btnDatosDxf">📐 Generar DXF con estos datos</button>
+    </div>
+    <div class="row">
+      <button id="btnDatosVolver">Volver al plano</button>
     </div>
   </div>
 
@@ -452,6 +498,12 @@
 // suelta), persistencia mínima del levantamiento en curso en
 // localStorage, service worker para la app sin internet y confirmación
 // antes de descartar un levantamiento en curso.
+// v3 (2026-10-30, DXF PRO): pantalla Datos del plano (localidad,
+// propietario, levantó/calculó/dibujó, escala, hoja y colindantes
+// N/S/E/O), cuadro de colindantes en el DXF, escala gráfica, marco del
+// plano, área en m² y ha más perímetro destacados, flecha de norte
+// rellena y datum corregido a WGS84 (el cálculo es WGS84, no una
+// transformación a SIRGAS-REGVEN).
 // exportación a .dxf (tablas de coordenadas/linderos, rumbo,
 // cuadrícula UTM, rótulo) — ver más abajo.
 // ============================================================
@@ -561,6 +613,7 @@ function resetAreaState(){
 
 function startFlow(mode){
   clearPending();
+  clearJobFields();
   inputMode = mode;
   resetAreaState();
   if (mode === 'record'){
@@ -957,10 +1010,92 @@ function finishAndShowResults(){
 
 document.getElementById('btnNewCalc').onclick = () => {
   clearPending();
+  clearJobFields();
   resetAreaState();
   resetManualForm();
   inputMode = null;
   showScreen('screenHome');
+};
+
+// ---------- Datos del plano (v3 DXF PRO) ----------
+// Los datos del profesional se guardan en este teléfono (sin cuentas ni
+// nube) para no escribirlos en cada plano. Los datos del lote
+// (localidad, propietario, hoja, colindantes) NO se guardan entre
+// trabajos: se borran con Nuevo cálculo y con cada nuevo flujo.
+const PROF_FIELDS_KEY = 'levantamiento-planimetrico-datos-profesional-v1';
+function datoVal(id){
+  const el = document.getElementById(id);
+  return el ? el.value.trim() : '';
+}
+function setDatoVal(id, val){
+  const el = document.getElementById(id);
+  if (el) el.value = val || '';
+}
+function getDatosPlano(){
+  return {
+    localidad: datoVal('datoLocalidad'),
+    propietario: datoVal('datoPropietario'),
+    levanto: datoVal('datoLevanto'),
+    calculo: datoVal('datoCalculo'),
+    dibujo: datoVal('datoDibujo'),
+    escala: datoVal('datoEscala'),
+    hoja: datoVal('datoHoja'),
+    colindantes: {
+      norte: datoVal('datoColNorte'),
+      sur: datoVal('datoColSur'),
+      este: datoVal('datoColEste'),
+      oeste: datoVal('datoColOeste')
+    }
+  };
+}
+function saveProfFields(){
+  try {
+    localStorage.setItem(PROF_FIELDS_KEY, JSON.stringify({
+      levanto: datoVal('datoLevanto'),
+      calculo: datoVal('datoCalculo'),
+      dibujo: datoVal('datoDibujo')
+    }));
+  } catch (err){}
+}
+function loadProfFields(){
+  try {
+    const raw = localStorage.getItem(PROF_FIELDS_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    setDatoVal('datoLevanto', d.levanto);
+    setDatoVal('datoCalculo', d.calculo);
+    setDatoVal('datoDibujo', d.dibujo);
+  } catch (err){}
+}
+function clearJobFields(){
+  setDatoVal('datoLocalidad', '');
+  setDatoVal('datoPropietario', '');
+  setDatoVal('datoHoja', '');
+  setDatoVal('datoColNorte', '');
+  setDatoVal('datoColSur', '');
+  setDatoVal('datoColEste', '');
+  setDatoVal('datoColOeste', '');
+}
+['datoLevanto', 'datoCalculo', 'datoDibujo'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', saveProfFields);
+});
+function backToResults(){
+  saveProfFields();
+  showScreen('screenResults');
+  // El mapa estuvo oculto mientras se veía otra pantalla: Leaflet
+  // necesita que se le avise para volver a dibujarse bien.
+  if (resultMap) requestAnimationFrame(() => resultMap.invalidateSize());
+}
+document.getElementById('btnGoDatos').onclick = () => {
+  loadProfFields();
+  showScreen('screenDatos');
+};
+document.getElementById('btnBackResults').onclick = backToResults;
+document.getElementById('btnDatosVolver').onclick = backToResults;
+document.getElementById('btnDatosDxf').onclick = () => {
+  saveProfFields();
+  exportAreaDXF('levantamiento_planimetrico');
 };
 
 // ---------- Exportar CSV ----------
@@ -1128,6 +1263,15 @@ function emitLine(w, layer, x1, y1, x2, y2){
   w.push(11, dxfNum(x2)); w.push(21, dxfNum(y2)); w.push(31, '0.0');
 }
 
+function emitSolidTriangle(w, layer, x1, y1, x2, y2, x3, y3){
+  // SOLID R12: 4 puntos, el 4º igual al 3º para que sea triángulo.
+  w.push(0, 'SOLID'); w.push(8, layer);
+  w.push(10, dxfNum(x1)); w.push(20, dxfNum(y1)); w.push(30, '0.0');
+  w.push(11, dxfNum(x2)); w.push(21, dxfNum(y2)); w.push(31, '0.0');
+  w.push(12, dxfNum(x3)); w.push(22, dxfNum(y3)); w.push(32, '0.0');
+  w.push(13, dxfNum(x3)); w.push(23, dxfNum(y3)); w.push(33, '0.0');
+}
+
 function emitCircle(w, layer, x, y, r){
   w.push(0, 'CIRCLE'); w.push(8, layer);
   w.push(10, dxfNum(x)); w.push(20, dxfNum(y)); w.push(30, '0.0');
@@ -1171,7 +1315,8 @@ function writeDxfHeader(w){
 const DXF_LAYERS = [
   ['LINDERO', 1], ['VERTICES', 2], ['ETIQUETAS_VERTICES', 7],
   ['CUADRO_COORDENADAS', 7], ['CUADRO_LINDEROS', 7], ['CUADRO_ROTULO', 7],
-  ['NORTE', 7], ['CUADRICULA_UTM', 8], ['TEXTO_DECLARATORIA', 7]
+  ['NORTE', 7], ['CUADRICULA_UTM', 8], ['TEXTO_DECLARATORIA', 7],
+  ['COLINDANTES', 7], ['ESCALA_GRAFICA', 7], ['MARCO', 7]
 ];
 
 function writeDxfTables(w){
@@ -1229,12 +1374,34 @@ function drawUtmGrid(w, bbox, extent, textH){
 }
 
 function drawNorthArrow(w, x, y, extent, textH){
+  // v3: punta rellena (SOLID), no solo dos líneas abiertas. Apunta al
+  // norte de cuadrícula UTM (eje +Y), que es el norte de este plano.
   const len = Math.max(extent * 0.08, textH * 4);
   const headW = len * 0.28;
-  emitLine(w, 'NORTE', x, y, x, y + len);
-  emitLine(w, 'NORTE', x, y + len, x - headW * 0.5, y + len - headW * 0.8);
-  emitLine(w, 'NORTE', x, y + len, x + headW * 0.5, y + len - headW * 0.8);
+  emitLine(w, 'NORTE', x, y, x, y + len - headW);
+  emitSolidTriangle(w, 'NORTE', x, y + len, x - headW * 0.5, y + len - headW, x + headW * 0.5, y + len - headW);
   emitText(w, 'NORTE', x, y + len + textH * 0.3, textH * 1.2, 'N', { halign: 1 });
+}
+
+function drawGraphicScale(w, x, yTop, interval, textH){
+  // Escala gráfica en metros reales (modelo 1:1): al imprimir, la barra
+  // escala junto con el plano, así que vale a cualquier escala de
+  // impresión. Dos tramos iguales al intervalo de la cuadrícula.
+  emitText(w, 'ESCALA_GRAFICA', x, yTop, textH * 0.9, 'ESCALA GRÁFICA (m)');
+  const barTop = yTop - textH * 1.6;
+  const barH = textH * 0.9;
+  const barBottom = barTop - barH;
+  [0, 1].forEach(i => {
+    const x0 = x + i * interval, x1 = x + (i + 1) * interval;
+    emitLine(w, 'ESCALA_GRAFICA', x0, barTop, x1, barTop);
+    emitLine(w, 'ESCALA_GRAFICA', x0, barBottom, x1, barBottom);
+    emitLine(w, 'ESCALA_GRAFICA', x0, barTop, x0, barBottom);
+    emitLine(w, 'ESCALA_GRAFICA', x1, barTop, x1, barBottom);
+  });
+  emitText(w, 'ESCALA_GRAFICA', x, barBottom - textH * 0.8, textH * 0.7, '0', { halign: 1 });
+  emitText(w, 'ESCALA_GRAFICA', x + interval, barBottom - textH * 0.8, textH * 0.7, fmtEs(interval, 0), { halign: 1 });
+  emitText(w, 'ESCALA_GRAFICA', x + 2 * interval, barBottom - textH * 0.8, textH * 0.7, fmtEs(2 * interval, 0), { halign: 1 });
+  return barBottom - textH * 1.3;
 }
 
 // ---------- Tabla genérica dibujada con líneas + texto ----------
@@ -1271,10 +1438,17 @@ function colWidthFor(header, values, textH){
 }
 
 function drawTitleBlock(w, x, yTop, meta, textH){
+  // v3: los datos ya no quedan en blanco para editar en AutoCAD: vienen
+  // de la pantalla Datos del plano. Área en m² y ha, más perímetro.
+  const d = meta.datos || {};
   const rows = [
-    ['Localidad', ''], ['Propietario', ''], ['Escala', ''],
-    ['Fecha', meta.fechaStr], ['Levantó', ''], ['Calculó', ''],
-    ['Dibujó', ''], ['Área', meta.areaStr], ['Hoja N°', '']
+    ['Localidad', d.localidad || ''], ['Propietario', d.propietario || ''], ['Escala', d.escala || ''],
+    ['Fecha', meta.fechaStr], ['Levantó', d.levanto || ''], ['Calculó', d.calculo || ''],
+    ['Dibujó', d.dibujo || ''],
+    ['Área (m²)', meta.areaM2 !== undefined ? `${fmtEs(meta.areaM2, 2)} m²` : (meta.areaStr || '')],
+    ['Área (ha)', meta.areaHa !== undefined ? `${fmtEs(meta.areaHa, 4)} ha` : ''],
+    ['Perímetro', meta.perimetroM !== undefined ? `${fmtEs(meta.perimetroM, 2)} m` : ''],
+    ['Hoja N°', d.hoja || '']
   ];
   const labelW = textH * 11, valueW = textH * 11, rowH = textH * 2.0;
   const totalW = labelW + valueW;
@@ -1335,22 +1509,69 @@ function buildDxf(pts, sides, meta){
 
   const zoneLabel = `Huso ${meta.zone} ${meta.isNorth ? 'Norte' : 'Sur'}`;
   emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY, textH * 1.1, 'COORDENADAS UTM');
-  emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY - textH * 1.6, textH * 1.1, `${zoneLabel}, Datum SIRGAS-REGVEN`);
-  cursorY -= textH * 1.6 + textH * 2.4;
+  // v3: datum corregido a WGS84, porque el cálculo es WGS84 (proj4);
+  // no se declara una transformación a SIRGAS-REGVEN que no se hizo.
+  emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY - textH * 1.6, textH * 1.1, `${zoneLabel}, Datum WGS84`);
+  emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY - textH * 3.2, textH * 1.0,
+    `Área: ${fmtEs(meta.areaM2, 2)} m² (${fmtEs(meta.areaHa, 4)} ha)`);
+  emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY - textH * 4.8, textH * 1.0,
+    `Perímetro: ${fmtEs(meta.perimetroM, 2)} m`);
+  if (meta.metodo) emitText(w, 'TEXTO_DECLARATORIA', colX, cursorY - textH * 6.4, textH * 1.0, `Método: ${meta.metodo}`);
+  cursorY -= textH * 6.4 + textH * 2.4;
 
   const coordHeaders = ['Vértice', 'Este', 'Norte'];
   const coordRows = pts.map((p, i) => [`V${i + 1}`, fmtEs(p.x, 2), fmtEs(p.y, 2)]);
   const coordColW = coordHeaders.map((h, i) => colWidthFor(h, coordRows.map(r => r[i]), textH));
+  const coordTableW = coordColW.reduce((a, b) => a + b, 0);
   cursorY = drawGridTable(w, 'CUADRO_COORDENADAS', colX, cursorY, coordHeaders, coordRows, coordColW, textH * 1.9, textH);
   cursorY -= textH * 2.6;
+
+  // v3: cuadro de colindantes (N/S/E/O). No confundir con la tabla de
+  // lados de abajo: esa es distancia y rumbo; esta es quién colinda.
+  // Solo se dibuja si al menos un colindante tiene texto.
+  let colindantesW = 0;
+  const colD = (meta.datos && meta.datos.colindantes) || {};
+  const colRows = [['Norte', colD.norte || ''], ['Sur', colD.sur || ''], ['Este', colD.este || ''], ['Oeste', colD.oeste || '']]
+    .filter(r => r[1]);
+  if (colRows.length > 0){
+    const colHeaders = ['Lindero', 'Colindante'];
+    const colColW = [
+      colWidthFor(colHeaders[0], colRows.map(r => r[0]), textH),
+      // Tope para que una descripción larga no ensanche el plano entero;
+      // en la pantalla se pide escribir colindantes cortos.
+      Math.min(colWidthFor(colHeaders[1], colRows.map(r => r[1]), textH), textH * 30)
+    ];
+    colindantesW = colColW.reduce((a, b) => a + b, 0);
+    cursorY = drawGridTable(w, 'COLINDANTES', colX, cursorY, colHeaders, colRows, colColW, textH * 1.9, textH);
+    cursorY -= textH * 2.6;
+  }
 
   const sideHeaders = ['Lado', 'Distancia (m)', 'Rumbo'];
   const sideRows = sides.map(s => [`V${s.from}-V${s.to}`, fmtEs(s.dist, 2), s.rumbo]);
   const sideColW = sideHeaders.map((h, i) => colWidthFor(h, sideRows.map(r => r[i]), textH));
+  const sideTableW = sideColW.reduce((a, b) => a + b, 0);
   cursorY = drawGridTable(w, 'CUADRO_LINDEROS', colX, cursorY, sideHeaders, sideRows, sideColW, textH * 1.9, textH);
   cursorY -= textH * 2.6;
 
-  drawTitleBlock(w, colX, cursorY, meta, textH);
+  const titleBottom = drawTitleBlock(w, colX, cursorY, meta, textH);
+
+  // v3: escala gráfica en la columna, debajo del rótulo.
+  const scaleInterval = gridInterval(extent);
+  const scaleBottom = drawGraphicScale(w, colX, titleBottom - textH * 2.6, scaleInterval, textH);
+
+  // v3: marco del plano alrededor de todo: lote, cuadrícula, norte,
+  // tablas, rótulo y escala gráfica. Se calcula con los anchos reales
+  // de las tablas, para no cortar ningún texto.
+  const contentW = Math.max(coordTableW, sideTableW, colindantesW, textH * 22, scaleInterval * 2);
+  const northLen = Math.max(extent * 0.08, textH * 4);
+  const frameLeft = bbox.minX - margin - scaleInterval - textH * 4;
+  const frameRight = colX + contentW + textH * 2;
+  const frameTop = bbox.maxY + margin * 0.35 + northLen + textH * 1.5 + textH * 2;
+  const frameBottom = Math.min(scaleBottom, bbox.minY - margin) - textH * 2;
+  emitLine(w, 'MARCO', frameLeft, frameBottom, frameRight, frameBottom);
+  emitLine(w, 'MARCO', frameRight, frameBottom, frameRight, frameTop);
+  emitLine(w, 'MARCO', frameRight, frameTop, frameLeft, frameTop);
+  emitLine(w, 'MARCO', frameLeft, frameTop, frameLeft, frameBottom);
 
   w.push(0, 'ENDSEC');
   w.push(0, 'EOF');
@@ -1383,9 +1604,14 @@ async function exportAreaDXF(filenamePrefix){
   const today = new Date();
   const fechaStr = `${String(today.getDate()).padStart(2, '0')}/${String(today.getMonth() + 1).padStart(2, '0')}/${today.getFullYear()}`;
   const areaHa = lastAreaM2 / 10000;
-  const areaStr = `${fmtEs(areaHa, 4)} ha.`;
+  const perimetroM = sides.reduce((a, s) => a + s.dist, 0);
+  const datos = getDatosPlano();
+  const metodo = areaManualInfo ? 'Coordenadas UTM ingresadas' : 'GPS, mediana 20 s por vértice';
 
-  const dxfContent = buildDxf(pts, sides, { zone, isNorth, fechaStr, areaStr });
+  const dxfContent = buildDxf(pts, sides, {
+    zone, isNorth, fechaStr,
+    areaM2: lastAreaM2, areaHa, perimetroM, datos, metodo
+  });
 
   const ts = new Date();
   const pad = v => String(v).padStart(2, '0');
